@@ -1,0 +1,160 @@
+---
+title: "Modelling processes"
+author: "Philippa Harkness"
+date: "07/02/2024"
+output: html_document
+---
+
+
+## Plot Pearson's residuals vs covariate
+
+```{r setup, include=FALSE}
+plot(x, residuals(mdl, type="pearson"),
+ylab="Pearson residuals", xlab="Covariate (x)", pch=19)
+abline(h=0, lty=2, col="lightgrey", lwd=4)
+
+# Plot 1 - Fitted values vs raw residuals
+plot(fitted(mdl), residuals(mdl, type="response"), pch=19, cex=0.5, ylab="Raw
+     residuals")
+
+# Plot 2 - Mean binned fitted values vs var of raw residuals # "Bin" the x-axis
+xbin <- cut(x=fitted(mdl),
+            breaks=quantile(fitted(mdl),
+                            probs=c(seq(0, 1, length=20))))
+# Compute mean of xbin
+xmean <- tapply(fitted(mdl), xbin, mean)
+# Compute var of residuals within xbin
+resvar <- tapply(residuals(mdl, type="response"), xbin, var) # Plot
+plot(xmean, resvar, xlab="Mean fitted values",
+     ylab="Variance of raw residuals", pch=19) abline(a=0, b=1, col='grey',
+                                                      lty=2, lwd=3)
+```
+
+## Residual plots
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(car) 
+residualPlots(glmFitOD3,
+              type="pearson",
+              terms=~.-Phase,
+              quadratic=TRUE, smooth=list(smoother=gamLine, col="#377eb8"),
+              fitted=FALSE,
+              col.quad="#e41a1c", col="grey", pch=19,
+              cex=0.3, ylim=c(-5, 5))
+```
+
+## Partial residual plots
+
+```{r setup, include=FALSE}
+workingModel<-update(workingModel_Int, .~. - XPos:Phase) par(mfrow=c(3,2))
+termplot(workingModel,se=T)
+
+par(mfrow=c(3,2)) 
+termplot(workingModel,se=T,partial.resid=T)
+```
+
+## Autocorrelation/Collinearity plots
+
+```{r setup, include=FALSE}
+# fitted vs observed
+mdlSummary <- data.frame(Observed=glmFitOD3$model$Count,
+                         Fitted=predict(glmFitOD3,
+                                        type="response"),
+                         Residuals=residuals(glmFitOD3,
+                                             type="pearson"),
+                         Index=seq(length(glmFitOD3$model$Count)))
+
+ggplot(mdlSummary[1:200, ]) +
+  geom_line(aes(x=Index, y=Fitted, col="Fitted"), lwd=1) +
+  geom_line(aes(x=Index, y=Observed, col="Observed"), lwd=1) +
+  scale_color_manual(values=c('Observed'="#377eb8",
+                              'Fitted'="#4daf4a")) +
+  labs(color="") + ylab("Bird counts")
+
+# Residuals
+ggplot(mdlSummary[1:200, ]) +
+  geom_line(aes(x=Index, y=Residuals, col="Residuals"), lwd=1)
+scale_color_manual(values=c('Residuals'="#e41a1c")) + labs(color="") +
+  ylab("Bird counts")
+
+# ACF plots
+acf(residuals(glmFitOD3, type="pearson"), main="glmFitOD3")
+
+# Wald- Wolfowitz runs test
+mdlSummary$Sign <- ifelse(mdlSummary$Residuals>0, 1, -1)
+ggplot(mdlSummary[1:200, ]) +
+  geom_line(aes(x=Index, y=Sign, col="Sign"), lwd=1) +
+  scale_color_manual(values=c('Sign'="black")) + labs(color="") +
+  ylab("Sign of the residuals")
+
+set.seed(1345) # for reproducibility
+dummyDta <- data.frame(Sign=ifelse(rnorm(200)>0, 1, -1),
+                       Index=seq(200))
+ggplot(dummyDta) +
+  geom_line(aes(x=Index, y=Sign, col="Sign"), lwd=1) +
+  scale_color_manual(values=c('Sign'="black")) + labs(color="") +
+  ylab("Sign of the residuals")
+
+# test for collinearity 
+vif(fit.full.fac) # year is colinear
+```
+
+
+## Automatic variation selection
+```{r setup, include=FALSE}
+# all possible subset selection
+require(MuMIn) 
+dredge(fullModel_OD)
+
+
+# Stepwise model selection
+options(na.action = 'na.fail')
+head(dredge(fit.interac)) 
+step(fit.interac, direction = 'both') 
+stepAIC(fit.interac, criterion = "BIC", direction = "both", k = log(nrow(EIA)))
+
+# both directions
+smallerMod <- step(fullModel_OD)
+summary(smallerMod)
+```
+
+
+## Correlation Matrix
+```{r setup, include=FALSE}
+# correlation plot for continuous variables
+cor_num <- cor(df[, num_ind])   # correlation matrix
+corrplot::corrplot(cor(df[, num_ind]), method="ellipse")
+
+# PCA based on correlation matrix
+PCA_temp <- prcomp(df[, num_ind_temp], scale. = TRUE)
+summary(PCA_temp)
+screeplot(PCA_temp, type = "l")
+PCA_temp$rotation
+```
+
+## Heatmap
+```{r setup, include=FALSE}
+
+library(fields) # quilt.plot() function
+quilt.plot(df$XPos, df$YPos, df$Depth, nx=35, ny=35, xlab="XPos", ylab="YPos")
+
+
+##ALTERNATIVE 
+# first group the data by gridcodes and find the mean density for each cell
+require(dplyr)
+newdata <- group_by(EIA, GridCode)%>%
+  summarise(x.pos=first(x.pos), y.pos=first(y.pos), area=first(area),
+            density=mean(density))
+# pick a nice colour scheme
+col<-colorRampPalette(rev(rgb(c(231,117,27),c(41,112,158),c(138,179,119),
+                              max=255)))(100)
+# plot the data
+p<-ggplot(newdata)
+p<-p + geom_tile(aes(x=x.pos, y=y.pos, fill=density, height=1000, width=1000))+
+  scale_fill_gradientn(colours=col, space="Lab", na.value="grey50",
+                       guide="colourbar")
+p + theme_bw() + coord_equal()
+```
+
