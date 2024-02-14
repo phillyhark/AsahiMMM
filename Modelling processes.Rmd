@@ -7,6 +7,8 @@ output: html_document
 
 ## testing version control
 
+# new comment to show git hub
+
 ## Plot Pearson's residuals vs covariate
 
 ```{r setup, include=FALSE}
